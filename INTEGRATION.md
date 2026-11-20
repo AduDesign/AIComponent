@@ -79,3 +79,22 @@ AduSkin 控件动画依赖 Application 级资源。组件创建时，如果宿�
 
 迁移后已验证：控件初始化、设置切换、配置保存与加密读写、AduSkin 气泡类型和零头像控件。
 聊天和设置页面均已渲染检查。
+
+## MVVM 结构
+ChatControl.ViewModel 为 AIComponent.ViewModels.ChatViewModel，继承 AduSkin.Utility.Mvvm.NotifyPropertyBase。
+所有操作使用 AduSkin.Utility.Commands.RelayCommand：
+SendCommand、StopCommand、SendOrStopCommand、ToggleSettingsCommand、NewChatCommand、
+AddProfileCommand、SaveProfileCommand、DeleteProfileCommand。
+
+ViewModel 管理输入、消息集合、忙碌状态、AI 选择、配置表单、校验及持久化。
+XAML 通过 ItemsSource 和 DataTemplate 创建气泡，所有按钮通过 Command 绑定；
+AduPasswordBox.Password 与 ApiKey 双向绑定。
+Enter 由 ChatViewBehavior.EnterCommand 转发 SendCommand，Shift+Enter 保留换行。
+消息滚动使用 AduSkin ListBoxExtend.ScrollPositionType。
+视图代码仅保留主题初始化与原宿主 API 的转接，不再包含业务事件处理。
+
+组件根 Grid 绑定自身 ViewModel，不覆盖宿主 DataContext。
+原 Workspace、Assistant、AssistantFactory、ConfigurationPath、LoadConfiguration 接口保持兼容；
+也可通过 Chat.ViewModel 直接访问绑定状态和命令。
+配置和命令应在 UI 线程访问。SendAsync 可等待完成，SendCommand 用于 UI 异步调用；
+SendOrStopCommand 在发送期间转发 StopCommand，避免异步 RelayCommand 的重入保护禁用停止操作。
