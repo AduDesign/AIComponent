@@ -5,3 +5,7 @@
 /.vs
 /AIComponent/.vs
 /AIComponent/AIComponent/obj
+
+# .NET build outputs
+**/bin/
+**/obj/
