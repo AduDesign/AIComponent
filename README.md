@@ -1,4 +1,4 @@
-# AIComponent
+﻿# AIComponent
 
 基于 .NET 8、WPF、AduSkin 和 MVVM 的 AI 助手组件。
 
@@ -20,6 +20,7 @@
 
 | 服务类型 | 接入方式 |
 | --- | --- |
+| Agnes AI | OpenAI 兼容接口 |
 | Google Gemini | OpenAI 兼容接口 |
 | OpenAI GPT | OpenAI 兼容接口 |
 | DeepSeek | OpenAI 兼容接口 |

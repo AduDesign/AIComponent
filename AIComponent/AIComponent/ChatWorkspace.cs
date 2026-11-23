@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -10,6 +10,7 @@ public sealed record ProviderPreset(string Name, string Endpoint, string Model, 
 {
     public static IReadOnlyList<ProviderPreset> All { get; } =
     [
+        new("Agnes AI", "https://apihub.agnes-ai.com/v1/", "agnes-2.5-flash"),
         new("Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai/", "gemini-2.5-flash"),
         new("OpenAI GPT", "https://api.openai.com/v1/", ""),
         new("DeepSeek", "https://api.deepseek.com/", "deepseek-flash"),

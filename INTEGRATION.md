@@ -98,3 +98,14 @@ Enter 由 ChatViewBehavior.EnterCommand 转发 SendCommand，Shift+Enter 保留�
 也可通过 Chat.ViewModel 直接访问绑定状态和命令。
 配置和命令应在 UI 线程访问。SendAsync 可等待完成，SendCommand 用于 UI 异步调用；
 SendOrStopCommand 在发送期间转发 StopCommand，避免异步 RelayCommand 的重入保护禁用停止操作。
+
+## Agnes AI
+设置页的 API 类型选择 Agnes AI，会自动填写：
+- API 基础地址：https://apihub.agnes-ai.com/v1/
+- 模型 ID：agnes-2.5-flash
+
+填写 Agnes AI 控制台申请的密钥，点击“保存并使用此 AI”后即可在聊天页选择。
+地址和模型 ID 均可修改。复用 OpenAiCompatibleProvider，无需单独的宿主适配代码。
+工具调用沿用组件现有工具注册机制，实际调用以服务响应为准。
+官方文档：https://agnes-ai.com/en/docs/overview
+未使用真实 API 密钥进行线上请求验证。
