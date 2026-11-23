@@ -18,7 +18,7 @@
         <TextBlock
             x:Name="PlayerStatus"
             Grid.Row="1"
-            Margin="8,10,0,0"
+            Margin="8,4"
             Foreground="#777777"
             Text="宿主模拟播放器：未播放" />
     </Grid>
