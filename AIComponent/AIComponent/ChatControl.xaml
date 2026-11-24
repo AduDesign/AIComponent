@@ -5,6 +5,7 @@
 	xmlns:AduAttach="clr-namespace:AduSkin.AdditionalAttributes;assembly=AduSkin"
 	xmlns:AduSkin="https://github.com/aduskin"
 	xmlns:behavior="clr-namespace:AIComponent.Behaviors"
+	xmlns:controls="clr-namespace:AIComponent.Controls"
 	x:Name="Root"
 	MinWidth="320"
 	MinHeight="340"
@@ -25,23 +26,36 @@
 								x:Name="Bubble"
 								MaxWidth="{Binding MaxWidth, RelativeSource={RelativeSource TemplatedParent}}"
 								Padding="6"
-								HorizontalAlignment="Left"
+								HorizontalAlignment="Stretch"
 								Background="{DynamicResource NormalBorderBrush}"
 								CornerRadius="2,12,12,12">
-								<AduSkin:AduTextBox
-									Height="Auto"
-									Padding="2"
-									AduAttach:BackgroundAttach.MouseOverBackground="Transparent"
-									AcceptsReturn="True"
-									Background="Transparent"
-									BorderThickness="0"
-									IsReadOnly="True"
-									MultipleLine="True"
-									Text="{TemplateBinding Text}"
-									TextWrapping="Wrap" />
+								<Grid>
+									<controls:StreamingMarkdownViewer
+										x:Name="MarkdownReply"
+										Padding="0"
+										Background="Transparent"
+										BorderThickness="0"
+										Style="{StaticResource AduMarkDownViewer}"
+										Text="{Binding Text, RelativeSource={RelativeSource TemplatedParent}}" />
+									<AduSkin:AduTextBox
+										x:Name="PlainMessage"
+										Visibility="Collapsed"
+										Height="Auto"
+										Padding="2"
+										AduAttach:BackgroundAttach.MouseOverBackground="Transparent"
+										AcceptsReturn="True"
+										Background="Transparent"
+										BorderThickness="0"
+										IsReadOnly="True"
+										MultipleLine="True"
+										Text="{TemplateBinding Text}"
+										TextWrapping="Wrap" />
+								</Grid>
 							</Border>
 							<ControlTemplate.Triggers>
 								<Trigger Property="ReceptionType" Value="Sender">
+									<Setter TargetName="MarkdownReply" Property="Visibility" Value="Collapsed" />
+									<Setter TargetName="PlainMessage" Property="Visibility" Value="Visible" />
 									<Setter TargetName="Bubble" Property="Background" Value="{DynamicResource PrimaryBrush}" />
 									<Setter TargetName="Bubble" Property="CornerRadius" Value="12,2,12,12" />
 									<Setter TargetName="Bubble" Property="HorizontalAlignment" Value="Right" />
