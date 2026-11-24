@@ -8,9 +8,23 @@ namespace AIComponent.ViewModels;
 
 public sealed class ChatMessageViewModel(string text, ReceptionType receptionType) : NotifyPropertyBase
 {
-    private string content = text;
-    public string Text { get => content; internal set => SetProperty(ref content, value); }
+    private string content = receptionType == ReceptionType.Receiver ? TrimLeadingBlankLines(text) : text;
+    public string Text
+    {
+        get => content;
+        internal set => SetProperty(ref content,
+            ReceptionType == ReceptionType.Receiver ? TrimLeadingBlankLines(value) : value);
+    }
     public ReceptionType ReceptionType { get; } = receptionType;
+
+    // Remove empty opening lines only; preserve indentation and paragraph breaks.
+    private static string TrimLeadingBlankLines(string value)
+    {
+        var start = 0;
+        for (var i = 0; i < value.Length && char.IsWhiteSpace(value[i]); i++)
+            if (value[i] is '\r' or '\n') start = i + 1;
+        return value[start..];
+    }
 }
 
 public sealed class ChatViewModel : NotifyPropertyBase
@@ -260,12 +274,16 @@ public sealed class ChatViewModel : NotifyPropertyBase
 			var progress = new Progress<string>(message => { if (ReferenceEquals(cancellation, source)) Status = message; });
 			var uiContext = SynchronizationContext.Current;
             ChatMessageViewModel? reply = null;
+            var openingText = "";
             void AppendFragment(string fragment)
             {
                 if (!ReferenceEquals(cancellation, source) || source.IsCancellationRequested) return;
                 if (reply is null)
                 {
-                    reply = new(fragment, ReceptionType.Receiver);
+                    openingText += fragment;
+                    if (string.IsNullOrWhiteSpace(openingText)) return;
+                    reply = new(openingText, ReceptionType.Receiver);
+                    openingText = "";
                     Messages.Add(reply);
                 }
                 else

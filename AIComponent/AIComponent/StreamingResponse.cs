@@ -1,4 +1,5 @@
 using System.IO;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -19,11 +20,34 @@ internal static class StreamingResponse
         var token = timeout.Token;
         try
         {
-            if (onTextDelta is not null) request.Headers.Accept.ParseAdd("text/event-stream, application/json");
+            // Prefer SSE exclusively when requesting streaming. Some gateways negotiate
+            // an ordinary JSON response if both formats are advertised equally.
+            if (onTextDelta is not null) request.Headers.Accept.ParseAdd("text/event-stream");
+            var elapsed = Stopwatch.StartNew();
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
             if (!response.IsSuccessStatusCode) throw requestError(response);
-            if (onTextDelta is not null && response.Content.Headers.ContentType?.MediaType == "text/event-stream")
-                return await parseStream(response.Content, onTextDelta, token);
+            var mediaType = response.Content.Headers.ContentType?.MediaType;
+            Trace.WriteLine($"AI response: content-type={mediaType}; headers={elapsed.ElapsedMilliseconds}ms", "AIComponent.Streaming");
+            if (onTextDelta is not null && string.Equals(mediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase))
+            {
+                var fragments = 0;
+                var firstTextMs = -1L;
+                try
+                {
+                    return await parseStream(response.Content, fragment =>
+                    {
+                        if (fragments++ == 0) firstTextMs = elapsed.ElapsedMilliseconds;
+                        onTextDelta(fragment);
+                    }, token);
+                }
+                finally
+                {
+                    Trace.WriteLine($"AI stream: fragments={fragments}; first-text={firstTextMs}ms; elapsed={elapsed.ElapsedMilliseconds}ms", "AIComponent.Streaming");
+                }
+            }
+
+            if (onTextDelta is not null)
+                Trace.WriteLine("Server returned a non-SSE response; text will appear after the complete JSON body is received.", "AIComponent.Streaming");
 
             using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
             return parseMessage(body.RootElement);
