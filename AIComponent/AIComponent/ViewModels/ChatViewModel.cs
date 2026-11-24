@@ -6,7 +6,12 @@ using AduSkin.Utility.Mvvm;
 
 namespace AIComponent.ViewModels;
 
-public sealed record ChatMessageViewModel(string Text, ReceptionType ReceptionType);
+public sealed class ChatMessageViewModel(string text, ReceptionType receptionType) : NotifyPropertyBase
+{
+    private string content = text;
+    public string Text { get => content; internal set => SetProperty(ref content, value); }
+    public ReceptionType ReceptionType { get; } = receptionType;
+}
 
 public sealed class ChatViewModel : NotifyPropertyBase
 {
@@ -253,10 +258,31 @@ public sealed class ChatViewModel : NotifyPropertyBase
 		{
 			// Progress marshals back to the caller's UI context, not a view reference.
 			var progress = new Progress<string>(message => { if (ReferenceEquals(cancellation, source)) Status = message; });
-			var reply = await current.SendAsync(text,
-				message => ((IProgress<string>)progress).Report(message), source.Token);
-			Messages.Add(new(reply, ReceptionType.Receiver));
-			Status = "";
+			var uiContext = SynchronizationContext.Current;
+            ChatMessageViewModel? reply = null;
+            void AppendFragment(string fragment)
+            {
+                if (!ReferenceEquals(cancellation, source) || source.IsCancellationRequested) return;
+                if (reply is null)
+                {
+                    reply = new(fragment, ReceptionType.Receiver);
+                    Messages.Add(reply);
+                }
+                else
+                {
+                    reply.Text += fragment;
+                }
+            }
+
+            await current.SendAsync(text, message => ((IProgress<string>)progress).Report(message), source.Token,
+                fragment =>
+                {
+                    if (uiContext is null || ReferenceEquals(uiContext, SynchronizationContext.Current))
+                        AppendFragment(fragment);
+                    else
+                        uiContext.Send(_ => AppendFragment(fragment), null);
+                });
+            Status = "";
 		}
 		catch (OperationCanceledException) { Status = "已停止。已执行的业务操作可能已经生效。"; }
 		catch (Exception ex) { Status = ex.Message; }
@@ -274,5 +300,3 @@ public sealed class ChatViewModel : NotifyPropertyBase
 		Status = "已清空当前对话";
 	}
 }
-
-

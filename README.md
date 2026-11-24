@@ -1,4 +1,4 @@
-﻿# AIComponent
+# AIComponent
 
 基于 .NET 8、WPF、AduSkin 和 MVVM 的 AI 助手组件。
 
@@ -14,7 +14,7 @@
 - 可选通过 Windows 当前用户 DPAPI 加密保存配置与 API 密钥。
 - ViewModel 继承 AduSkin 的 NotifyPropertyBase，操作使用 RelayCommand。
 
-当前回答以整段文本返回。尚未实现流式输出、Markdown 渲染、附件、聊天记录持久化、自动上下文裁剪及工作流设计器。
+支持流式响应的模型会逐步显示正文，并保留换行。返回普通 JSON 的服务和旧版自定义适配器仍整段显示。尚未实现 Markdown 渲染、附件、聊天记录持久化、自动上下文裁剪及工作流设计器。
 
 ## 模型服务
 

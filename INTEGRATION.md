@@ -46,7 +46,7 @@ IAiTool 提供 Definition（名称、描述、参数 JSON Schema）和 ExecuteAs
 宿主必须校验参数、权限、资源状态，并实现业务需要的确认流程。
 描述用 JSON Schema 不代替执行时校验。每轮最多八批工具调用，支持取消。
 失败/取消会移除本轮协议历史，已经执行的业务副作用不会回滚，工具应考虑幂等性。
-模型响应为整段返回；当前尚未支持流式文本、Markdown 渲染、附件或上下文自动裁剪。
+聊天控件使用流式回复。OpenAI 兼容接口和 Claude 原生接口均支持 SSE；普通 JSON 及仅实现 IChatProvider 的适配器整段返回。宿主模型包装器可实现 IStreamingChatProvider 传递正文增量，工具参数会在响应完成后执行。当前尚未支持 Markdown 渲染、附件或上下文自动裁剪。
 
 ## 验证
 解决方案编译零警告、零错误。

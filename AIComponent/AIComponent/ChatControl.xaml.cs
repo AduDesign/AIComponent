@@ -19,4 +19,14 @@ public partial class ChatControl : UserControl
                 new AduSkin.AduSkinTheme { ThemeType = AduSkin.ThemeType.Light });
         InitializeComponent();
     }
+    private void FollowStreamingReply(object sender, ScrollChangedEventArgs e)
+    {
+        if (!ViewModel.IsBusy || e.ExtentHeightChange <= 0 ||
+            e.OriginalSource is not ScrollViewer scroller || scroller.TemplatedParent != sender)
+            return;
+
+        var oldBottom = e.ExtentHeight - e.ExtentHeightChange - e.ViewportHeight + e.ViewportHeightChange;
+        if (e.VerticalOffset >= oldBottom - 1)
+            scroller.ScrollToEnd();
+    }
 }

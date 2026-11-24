@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -61,10 +61,18 @@ public sealed class ChatWorkspace
         return assistant;
     }
 }
-public sealed class ClaudeProvider(HttpClient client, ModelConfiguration configuration) : IChatProvider
+public sealed class ClaudeProvider(HttpClient client, ModelConfiguration configuration) : IStreamingChatProvider
 {
-    public async Task<ChatMessage> CompleteAsync(IReadOnlyList<ChatMessage> messages,
-        IReadOnlyList<ToolDefinition> tools, CancellationToken cancellationToken)
+    public Task<ChatMessage> CompleteAsync(IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<ToolDefinition> tools, CancellationToken cancellationToken) =>
+        CompleteCoreAsync(messages, tools, null, cancellationToken);
+
+    public Task<ChatMessage> CompleteStreamingAsync(IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<ToolDefinition> tools, Action<string> onTextDelta, CancellationToken cancellationToken) =>
+        CompleteCoreAsync(messages, tools, onTextDelta, cancellationToken);
+
+    private async Task<ChatMessage> CompleteCoreAsync(IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<ToolDefinition> tools, Action<string>? onTextDelta, CancellationToken cancellationToken)
     {
         var translated = new JsonArray();
         foreach (var message in messages.Where(m => m.Role != "system"))
@@ -99,18 +107,22 @@ public sealed class ClaudeProvider(HttpClient client, ModelConfiguration configu
                 ["name"] = t.Name, ["description"] = t.Description,
                 ["input_schema"] = JsonNode.Parse(t.Parameters.GetRawText())
             }).ToArray());
+        if (onTextDelta is not null) payload["stream"] = true;
         using var request = new HttpRequestMessage(HttpMethod.Post,
             configuration.Endpoint.TrimEnd('/') + "/messages");
         request.Headers.Add("x-api-key", configuration.ApiKey);
         request.Headers.Add("anthropic-version", "2023-06-01");
         request.Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
-        using var response = await client.SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Claude 请求失败：HTTP {(int)response.StatusCode}。请检查配置。");
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        return await StreamingResponse.SendAsync(client, request,
+            response => new HttpRequestException($"Claude 请求失败：HTTP {(int)response.StatusCode}。请检查配置。"),
+            ParseMessage, StreamingResponse.ReadClaudeAsync, onTextDelta, cancellationToken);
+    }
+
+    private static ChatMessage ParseMessage(JsonElement root)
+    {
         var text = new StringBuilder();
         var calls = new List<ToolCall>();
-        foreach (var part in document.RootElement.GetProperty("content").EnumerateArray())
+        foreach (var part in root.GetProperty("content").EnumerateArray())
         {
             switch (part.GetProperty("type").GetString())
             {

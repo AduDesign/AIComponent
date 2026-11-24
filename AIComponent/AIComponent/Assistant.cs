@@ -22,11 +22,26 @@ public interface IChatProvider
         IReadOnlyList<ToolDefinition> tools, CancellationToken cancellationToken);
 }
 
-/// <summary>Endpoint is an API base URL, for example https://host/v1/.</summary>
-public sealed class OpenAiCompatibleProvider(HttpClient client, ModelConfiguration configuration) : IChatProvider
+/// <summary>Receives visible text fragments in order and returns a complete response, including tool calls.</summary>
+public interface IStreamingChatProvider : IChatProvider
 {
-    public async Task<ChatMessage> CompleteAsync(IReadOnlyList<ChatMessage> messages,
-        IReadOnlyList<ToolDefinition> tools, CancellationToken cancellationToken)
+    Task<ChatMessage> CompleteStreamingAsync(IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<ToolDefinition> tools, Action<string> onTextDelta, CancellationToken cancellationToken);
+}
+
+/// <summary>Endpoint is an API base URL, for example https://host/v1/.</summary>
+public sealed class OpenAiCompatibleProvider(HttpClient client, ModelConfiguration configuration) : IStreamingChatProvider
+{
+    public Task<ChatMessage> CompleteAsync(IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<ToolDefinition> tools, CancellationToken cancellationToken) =>
+        CompleteCoreAsync(messages, tools, null, cancellationToken);
+
+    public Task<ChatMessage> CompleteStreamingAsync(IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<ToolDefinition> tools, Action<string> onTextDelta, CancellationToken cancellationToken) =>
+        CompleteCoreAsync(messages, tools, onTextDelta, cancellationToken);
+
+    private async Task<ChatMessage> CompleteCoreAsync(IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<ToolDefinition> tools, Action<string>? onTextDelta, CancellationToken cancellationToken)
     {
         var payload = new JsonObject
         {
@@ -56,18 +71,22 @@ public sealed class OpenAiCompatibleProvider(HttpClient client, ModelConfigurati
                     ["parameters"] = JsonNode.Parse(t.Parameters.GetRawText())
                 }
             }).ToArray());
+        if (onTextDelta is not null) payload["stream"] = true;
         using var request = new HttpRequestMessage(HttpMethod.Post,
             new Uri(new Uri(configuration.Endpoint.TrimEnd('/') + "/"), "chat/completions"));
         if (!string.IsNullOrWhiteSpace(configuration.ApiKey))
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", configuration.ApiKey);
         request.Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
-        using var response = await client.SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"模型请求失败：HTTP {(int)response.StatusCode}。请检查地址、模型和密钥。");
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
-        var message = document.RootElement.GetProperty("choices")[0].GetProperty("message");
+        return await StreamingResponse.SendAsync(client, request,
+            response => new HttpRequestException($"模型请求失败：HTTP {(int)response.StatusCode}。请检查地址、模型和密钥。"),
+            ParseMessage, StreamingResponse.ReadOpenAiAsync, onTextDelta, cancellationToken);
+    }
+
+    private static ChatMessage ParseMessage(JsonElement root)
+    {
+        var message = root.GetProperty("choices")[0].GetProperty("message");
         var calls = new List<ToolCall>();
-        if (message.TryGetProperty("tool_calls", out var toolCalls))
+        if (message.TryGetProperty("tool_calls", out var toolCalls) && toolCalls.ValueKind == JsonValueKind.Array)
             foreach (var call in toolCalls.EnumerateArray())
             {
                 var function = call.GetProperty("function");
@@ -88,18 +107,35 @@ public sealed class AiAssistant(IChatProvider provider)
     public IReadOnlyList<ChatMessage> History => history.AsReadOnly();
     public int MaxToolRounds { get; init; } = 8;
     public void RegisterTool(IAiTool tool) => tools.Add(tool.Definition.Name, tool);
-    public async Task<string> SendAsync(string text, Action<string>? progress = null,
-        CancellationToken cancellationToken = default)
+    public Task<string> SendAsync(string text, Action<string>? progress = null,
+        CancellationToken cancellationToken = default) => SendAsync(text, progress, cancellationToken, null);
+
+    public async Task<string> SendAsync(string text, Action<string>? progress,
+        CancellationToken cancellationToken, Action<string>? onTextDelta)
     {
         await gate.WaitAsync(cancellationToken);
         var start = history.Count;
         try
         {
             history.Add(new("user", text));
+            var hasVisibleText = false;
             for (var round = 0; round <= MaxToolRounds; round++)
             {
-                var reply = await provider.CompleteAsync(history,
-                    tools.Values.Select(t => t.Definition).ToArray(), cancellationToken);
+                var definitions = tools.Values.Select(t => t.Definition).ToArray();
+                var roundHasText = false;
+                void PublishText(string fragment)
+                {
+                    if (string.IsNullOrEmpty(fragment)) return;
+                    if (!roundHasText && hasVisibleText) onTextDelta?.Invoke("\n\n");
+                    roundHasText = hasVisibleText = true;
+                    onTextDelta?.Invoke(fragment);
+                }
+                var reply = onTextDelta is not null && provider is IStreamingChatProvider streaming
+                    ? await streaming.CompleteStreamingAsync(history, definitions, PublishText, cancellationToken)
+                    : await provider.CompleteAsync(history, definitions, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (onTextDelta is not null && !roundHasText && reply.Content is { Length: > 0 } content)
+                    PublishText(content);
                 if (reply.ToolCalls is not { Count: > 0 })
                 {
                     history.Add(reply);
