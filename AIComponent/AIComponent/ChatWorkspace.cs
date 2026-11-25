@@ -84,8 +84,9 @@ public sealed class ClaudeProvider(HttpClient client, ModelConfiguration configu
                     ["content"] = message.Content });
             else
             {
-                if (!string.IsNullOrEmpty(message.Content))
-                    parts.Add(new JsonObject { ["type"] = "text", ["text"] = message.Content });
+                var content = message.GetModelContent();
+                if (!string.IsNullOrEmpty(content))
+                    parts.Add(new JsonObject { ["type"] = "text", ["text"] = content });
                 if (message.ToolCalls is not null)
                     foreach (var call in message.ToolCalls)
                         parts.Add(new JsonObject { ["type"] = "tool_use", ["id"] = call.Id,

@@ -46,7 +46,15 @@ IAiTool 提供 Definition（名称、描述、参数 JSON Schema）和 ExecuteAs
 宿主必须校验参数、权限、资源状态，并实现业务需要的确认流程。
 描述用 JSON Schema 不代替执行时校验。每轮最多八批工具调用，支持取消。
 失败/取消会移除本轮协议历史，已经执行的业务副作用不会回滚，工具应考虑幂等性。
-聊天控件使用流式回复。OpenAI 兼容接口和 Claude 原生接口均支持 SSE；普通 JSON 及仅实现 IChatProvider 的适配器整段返回。宿主模型包装器可实现 IStreamingChatProvider 传递正文增量，工具参数会在响应完成后执行。当前尚未支持 Markdown 渲染、附件或上下文自动裁剪。
+聊天控件使用流式回复。OpenAI 兼容接口和 Claude 原生接口均支持 SSE；普通 JSON 及仅实现 IChatProvider 的适配器整段返回。宿主模型包装器可实现 IStreamingChatProvider 传递正文增量，工具参数会在响应完成后执行。当前尚未支持 Markdown 渲染、非文本附件或上下文自动裁剪。
+
+## 本地文件与目录
+输入区支持多选 TXT / Markdown 文件，或递归选择目录中的文本与代码文件。附件可在发送前移除，也可只发送附件以请求概述。
+文件选择时读取为快照；发送时以用户消息正文提供给模型。自定义 IChatProvider / IStreamingChatProvider 也能直接从 Content 取得文件正文，不需要上传文件 API。
+ChatMessage.Attachments 保留会话中的快照，GetDisplayContent() 用于显示文件名，GetModelContent() 用于构造包含正文的模型文本。宿主可调用 Chat.ViewModel.AddAttachmentsAsync(paths)、AddDirectoryAsync(path)、RemoveAttachment(attachment)，Attachments 为只读可观察集合。
+支持 UTF-8、带 BOM 的 UTF-16 / UTF-32；不支持的编码提示另存为 UTF-8。目录递归跳过重解析点（链接），包含隐藏文本文件，二进制和失败文件显示读取提示。
+每条消息最多 128 个附件、单文件 256 KiB、总计 2 MiB，每次最多扫描 2000 个候选文件；达到限制提示未完整读取。模型实际上下文容量由服务决定，组件不自动裁剪。
+文件正文不写入配置文件，也不会自动跟踪原文件变化。清空对话会清空待发送附件。
 
 ## 验证
 解决方案编译零警告、零错误。
@@ -87,11 +95,11 @@ SendCommand、StopCommand、SendOrStopCommand、ToggleSettingsCommand、NewChatC
 AddProfileCommand、SaveProfileCommand、DeleteProfileCommand。
 
 ViewModel 管理输入、消息集合、忙碌状态、AI 选择、配置表单、校验及持久化。
-XAML 通过 ItemsSource 和 DataTemplate 创建气泡，所有按钮通过 Command 绑定；
+XAML 通过 ItemsSource 和 DataTemplate 创建气泡，聊天与配置操作通过 Command 绑定；
 AduPasswordBox.Password 与 ApiKey 双向绑定。
 Enter 由 ChatViewBehavior.EnterCommand 转发 SendCommand，Shift+Enter 保留换行。
 消息滚动使用 AduSkin ListBoxExtend.ScrollPositionType。
-视图代码仅保留主题初始化与原宿主 API 的转接，不再包含业务事件处理。
+视图代码保留主题初始化、宿主 API 转接、滚动跟随和文件/目录选择对话框；文件读取与附件状态由 ViewModel 管理。
 
 组件根 Grid 绑定自身 ViewModel，不覆盖宿主 DataContext。
 原 Workspace、Assistant、AssistantFactory、ConfigurationPath、LoadConfiguration 接口保持兼容；

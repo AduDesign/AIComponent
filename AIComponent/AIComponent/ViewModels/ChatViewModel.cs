@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 
 using AduSkin.Controls;
 using AduSkin.Utility.Commands;
@@ -25,9 +26,12 @@ public sealed class ChatViewModel : NotifyPropertyBase
 	private string profileName = "", endpoint = "", model = "", apiKey = "";
 	private bool enableTools = true;
 	private CancellationTokenSource? cancellation;
+	private bool isLoadingAttachments;
+	private readonly ObservableCollection<TextAttachment> attachments = [];
 	public ChatViewModel()
 	{
-		SendCommand = new RelayCommand(SendAsync, () => !IsBusy && !string.IsNullOrWhiteSpace(InputText));
+		Attachments = new(attachments);
+		SendCommand = new RelayCommand(SendAsync, () => IsIdle && (!string.IsNullOrWhiteSpace(InputText) || attachments.Count > 0));
 		StopCommand = new RelayCommand(() => cancellation?.Cancel(), () => IsBusy);
 		// The async RelayCommand blocks reentry; keep a separate dispatcher command so Stop stays usable.
 		SendOrStopCommand = new RelayCommand(() =>
@@ -40,11 +44,11 @@ public sealed class ChatViewModel : NotifyPropertyBase
 		{
 			IsSettingsOpen = !IsSettingsOpen;
 			if (IsSettingsOpen && SelectedAi is not null) EditingProfile = SelectedAi;
-		}, () => !IsBusy);
-		NewChatCommand = new RelayCommand(NewChat, () => !IsBusy);
-		AddProfileCommand = new RelayCommand(AddProfile, () => !IsBusy);
-		SaveProfileCommand = new RelayCommand(SaveProfile, () => !IsBusy);
-		DeleteProfileCommand = new RelayCommand(DeleteProfile, () => !IsBusy && EditingProfile is not null);
+		}, () => IsIdle);
+		NewChatCommand = new RelayCommand(NewChat, () => IsIdle);
+		AddProfileCommand = new RelayCommand(AddProfile, () => IsIdle);
+		SaveProfileCommand = new RelayCommand(SaveProfile, () => IsIdle);
+		DeleteProfileCommand = new RelayCommand(DeleteProfile, () => IsIdle && EditingProfile is not null);
 		Messages.CollectionChanged += (_, _) => OnPropertyChanged(nameof(IsEmpty));
 		AddProfile();
 	}
@@ -57,12 +61,14 @@ public sealed class ChatViewModel : NotifyPropertyBase
 	public RelayCommand SaveProfileCommand { get; }
 	public RelayCommand DeleteProfileCommand { get; }
 	public ObservableCollection<ChatMessageViewModel> Messages { get; } = [];
+	public ReadOnlyObservableCollection<TextAttachment> Attachments { get; }
+	public bool HasAttachments => attachments.Count > 0;
 	public IReadOnlyList<ProviderPreset> Providers => ProviderPreset.All;
 	public ObservableCollection<AiProfile> Profiles => workspace.Profiles;
 	public string? ConfigurationPath { get; set; }
 	public Func<AiAssistant>? AssistantFactory { get; set; }
 	public bool IsEmpty => Messages.Count == 0;
-	public bool IsIdle => !IsBusy;
+	public bool IsIdle => !IsBusy && !isLoadingAttachments;
 	public string SendToolTip => IsBusy ? "停止生成" : "发送消息";
 	public ChatWorkspace Workspace
 	{
@@ -90,8 +96,8 @@ public sealed class ChatViewModel : NotifyPropertyBase
 			Messages.Clear();
 			if (value is not null)
 				foreach (var message in value.History.Where(m => m.Role is "user" or "assistant"))
-					if (!string.IsNullOrEmpty(message.Content))
-						Messages.Add(new(message.Content, message.Role == "user" ? ReceptionType.Sender : ReceptionType.Receiver));
+					if (!string.IsNullOrEmpty(message.GetDisplayContent()))
+						Messages.Add(new(message.GetDisplayContent(), message.Role == "user" ? ReceptionType.Sender : ReceptionType.Receiver));
 		}
 	}
 	public AiProfile? SelectedAi
@@ -99,7 +105,7 @@ public sealed class ChatViewModel : NotifyPropertyBase
 		get => selectedAi;
 		set
 		{
-			if (IsBusy) return;
+			if (!IsIdle) return;
 			if (!SetProperty(ref selectedAi, value) || loading) return;
 			Assistant = value is null ? null : workspace.GetAssistant(value);
 			Status = "";
@@ -164,7 +170,60 @@ public sealed class ChatViewModel : NotifyPropertyBase
 	}
 	private void EnsureIdle()
 	{
-		if (IsBusy) throw new InvalidOperationException("请先停止当前对话。");
+		if (!IsIdle) throw new InvalidOperationException("请等待文件读取完成或停止当前对话。");
+	}
+	public Task AddAttachmentsAsync(IEnumerable<string> paths) => ImportAttachmentsAsync(() => paths, null);
+	public Task AddDirectoryAsync(string path) => ImportAttachmentsAsync(() =>
+		Directory.EnumerateFiles(path, "*", new EnumerationOptions
+		{
+			RecurseSubdirectories = true,
+			AttributesToSkip = FileAttributes.ReparsePoint,
+			IgnoreInaccessible = false
+		}), Path.GetFullPath(path));
+
+	private async Task ImportAttachmentsAsync(Func<IEnumerable<string>> getPaths, string? rootDirectory)
+	{
+		EnsureIdle();
+		isLoadingAttachments = true;
+		OnPropertyChanged(nameof(IsIdle)); RefreshCommands();
+		var errors = new List<string>();
+		var scanned = 0;
+		var added = 0;
+		try
+		{
+			Status = "正在读取文件…";
+			foreach (var path in getPaths())
+			{
+				if (++scanned > 2000) { errors.Add("已达到 2000 个候选文件的扫描上限，目录未完整读取。"); break; }
+				if (attachments.Count >= TextAttachment.MaxFiles) { errors.Add("每条消息最多附加 128 个文件，其余文件未读取。"); break; }
+				try
+				{
+					if (attachments.Any(a => string.Equals(a.FullPath, Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))) continue;
+					var attachment = await TextAttachment.ReadAsync(path, rootDirectory is not null, rootDirectory);
+					if (attachments.Sum(a => a.ByteLength) + attachment.ByteLength > TextAttachment.MaxTotalBytes)
+						throw new InvalidDataException("附件总大小不能超过 2 MiB，该文件未添加。");
+					attachments.Add(attachment);
+					added++;
+				}
+				catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+				{ errors.Add($"{Path.GetFileName(path)}：{ex.Message}"); }
+			}
+		}
+		catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+		{ errors.Add($"读取未完成：{ex.Message}"); }
+		finally
+		{
+			Status = $"本次添加 {added} 个文件，当前共 {attachments.Count} 个。" +
+				(errors.Count == 0 ? "发送后交给当前模型阅读。" : $"\n有 {errors.Count} 项未读取或未添加：\n" + string.Join("\n", errors));
+			isLoadingAttachments = false;
+			OnPropertyChanged(nameof(HasAttachments)); OnPropertyChanged(nameof(IsIdle)); RefreshCommands();
+		}
+	}
+	public void RemoveAttachment(TextAttachment attachment)
+	{
+		EnsureIdle();
+		attachments.Remove(attachment);
+		OnPropertyChanged(nameof(HasAttachments)); RefreshCommands();
 	}
 	public void LoadConfiguration()
 	{
@@ -245,11 +304,13 @@ public sealed class ChatViewModel : NotifyPropertyBase
 	}
 	public async Task SendAsync()
 	{
-		if (IsBusy || string.IsNullOrWhiteSpace(InputText)) return;
+		if (!IsIdle || (string.IsNullOrWhiteSpace(InputText) && attachments.Count == 0)) return;
 		var current = Assistant;
 		if (current is null) { Status = "请先点击右上角设置，添加并选择 AI。"; return; }
 		var text = InputText.Trim();
-		Messages.Add(new(text, ReceptionType.Sender));
+		var sentAttachments = attachments.ToArray();
+		Messages.Add(new(new ChatMessage("user", text) { Attachments = sentAttachments }.GetDisplayContent(), ReceptionType.Sender));
+		attachments.Clear(); OnPropertyChanged(nameof(HasAttachments));
 		InputText = "";
 		using var source = new CancellationTokenSource();
 		cancellation = source;
@@ -281,7 +342,7 @@ public sealed class ChatViewModel : NotifyPropertyBase
                         AppendFragment(fragment);
                     else
                         uiContext.Send(_ => AppendFragment(fragment), null);
-                });
+                }, sentAttachments);
             Status = "";
 		}
 		catch (OperationCanceledException) { Status = "已停止。已执行的业务操作可能已经生效。"; }
@@ -291,6 +352,7 @@ public sealed class ChatViewModel : NotifyPropertyBase
 	private void NewChat()
 	{
 		EnsureIdle();
+		attachments.Clear(); OnPropertyChanged(nameof(HasAttachments)); RefreshCommands();
 		if (SelectedAi is { } profile)
 		{
 			workspace.Reset(profile.Id);

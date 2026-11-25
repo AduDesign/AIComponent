@@ -143,6 +143,36 @@
                     </AduSkin:AduListBox>
                 </Grid>
 
+                <StackPanel Grid.Row="2" Margin="6,0,6,4">
+                    <StackPanel Orientation="Horizontal">
+                        <AduSkin:AduButton x:Name="AttachFilesButton" Width="Auto" Padding="10,0"
+                            Content="添加文件" Click="SelectTextFiles" IsEnabled="{Binding IsIdle}"
+                            ToolTip="选择 TXT 或 Markdown 文件；发送时将正文提供给当前模型" />
+                        <AduSkin:AduButton x:Name="AttachDirectoryButton" Width="Auto" Padding="10,0" Margin="8,0,0,0"
+                            Content="添加目录" Click="SelectDirectory" IsEnabled="{Binding IsIdle}"
+                            ToolTip="递归读取文本和代码文件，跳过目录链接；最多 128 个文件、单文件 256 KiB、合计 2 MiB" />
+                    </StackPanel>
+                    <ScrollViewer MaxHeight="110" Margin="0,4,0,0" VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Disabled" Visibility="{Binding HasAttachments, Converter={StaticResource BoolVisibility}}">
+                        <ItemsControl ItemsSource="{Binding Attachments}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding DisplayName}"
+                                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        <AduSkin:AduButton Grid.Column="1" Width="28" Height="24" Content="×"
+                                            ToolTip="移除此附件" Click="RemoveTextAttachment"
+                                            IsEnabled="{Binding DataContext.IsIdle, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </StackPanel>
                 <Grid Grid.Row="3" Margin="6">
                     <AduSkin:AduTextBox
                         x:Name="Input"
