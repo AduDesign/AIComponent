@@ -22,8 +22,8 @@ public partial class ChatControl : UserControl
     }
     private void FollowStreamingReply(object sender, ScrollChangedEventArgs e)
     {
-        if (!ViewModel.IsBusy || e.ExtentHeightChange <= 0 ||
-            e.OriginalSource is not ScrollViewer scroller || scroller.TemplatedParent != sender)
+        if (e.ExtentHeightChange <= 0 ||
+            sender is not ScrollViewer scroller || !ReferenceEquals(e.OriginalSource, scroller))
             return;
 
         var oldBottom = e.ExtentHeight - e.ExtentHeightChange - e.ViewportHeight + e.ViewportHeightChange;

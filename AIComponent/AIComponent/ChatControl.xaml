@@ -5,6 +5,7 @@
     xmlns:AduAttach="clr-namespace:AduSkin.AdditionalAttributes;assembly=AduSkin"
     xmlns:AduSkin="https://github.com/aduskin"
     xmlns:behavior="clr-namespace:AIComponent.Behaviors"
+    xmlns:controls="clr-namespace:AIComponent.Controls"
     x:Name="Root"
     MinWidth="320"
     MinHeight="340"
@@ -25,26 +26,44 @@
                                 x:Name="Bubble"
                                 MaxWidth="{Binding MaxWidth, RelativeSource={RelativeSource TemplatedParent}}"
                                 Padding="6"
-                                HorizontalAlignment="Left"
+                                HorizontalAlignment="Stretch"
                                 Background="{DynamicResource NormalBorderBrush}"
                                 CornerRadius="2,12,12,12">
-                                <AduSkin:AduTextBox
-                                    Height="Auto"
-                                    Padding="2"
-                                    AduAttach:BackgroundAttach.MouseOverBackground="Transparent"
-                                    Background="Transparent"
-                                    BorderThickness="0"
-                                    AcceptsReturn="True"
-                                    IsReadOnly="True"
-                                    MultipleLine="True"
-                                    Text="{TemplateBinding Text}"
-                                    TextWrapping="Wrap" />
+                                <Grid>
+                                    <controls:StreamingMarkdownViewer
+                                        x:Name="MarkdownReply"
+                                        Padding="0"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Style="{StaticResource AduMarkDownViewer}"
+                                        Text="{Binding Text, RelativeSource={RelativeSource TemplatedParent}}" />
+                                    <AduSkin:AduTextBox
+                                        x:Name="PlainMessage"
+                                        Height="Auto"
+                                        Padding="2"
+                                        AduAttach:BackgroundAttach.MouseOverBackground="Transparent"
+                                        AcceptsReturn="True"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        IsReadOnly="True"
+                                        MultipleLine="True"
+                                        Text="{TemplateBinding Text}"
+                                        TextWrapping="Wrap"
+                                        Visibility="Collapsed" />
+                                </Grid>
                             </Border>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="ReceptionType" Value="Sender">
+                                    <Setter TargetName="MarkdownReply" Property="Visibility" Value="Collapsed" />
+                                    <Setter TargetName="PlainMessage" Property="Visibility" Value="Visible" />
                                     <Setter TargetName="Bubble" Property="Background" Value="{DynamicResource PrimaryBrush}" />
                                     <Setter TargetName="Bubble" Property="CornerRadius" Value="12,2,12,12" />
                                     <Setter TargetName="Bubble" Property="HorizontalAlignment" Value="Right" />
+                                    <Setter TargetName="Bubble" Property="Margin" Value="20,0,0,0" />
+                                </Trigger>
+                                <Trigger Property="ReceptionType" Value="Receiver">
+                                    <Setter TargetName="Bubble" Property="Margin" Value="0,0,20,0" />
+                                    <Setter TargetName="Bubble" Property="Background" Value="Transparent" />
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
@@ -97,7 +116,7 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <Grid Grid.Row="1" Margin="0,10">
+                <Grid Grid.Row="1" Margin="0,6">
                     <TextBlock
                         x:Name="Welcome"
                         HorizontalAlignment="Center"
@@ -107,53 +126,54 @@
                         Text="有什么可以帮你？&#xA;&#xA;选择已配置的 AI 开始对话&#xA;点击右上角设置添加模型服务"
                         TextAlignment="Center"
                         Visibility="{Binding IsEmpty, Converter={StaticResource BoolVisibility}}" />
-                    <AduSkin:AduListBox
-                        x:Name="Messages"
+                    <AduScrollViewer
+                        x:Name="MessagesScroller"
                         Padding="6,0"
-                        HorizontalContentAlignment="Stretch"
-                        AduAttach:PlaceHolderAttach.PlaceHolderVisible="Collapsed"
-                        AduSkin:ListBoxExtend.ScrollPositionType="End"
-                        ScrollViewer.ScrollChanged="FollowStreamingReply"
                         Background="Transparent"
-                        BorderAttach.CornerRadius="0"
                         BorderThickness="0"
-                        ItemsSource="{Binding Messages}"
-                        ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                        ScrollViewer.VerticalScrollBarVisibility="Auto">
-                        <AduSkin:AduListBox.Resources>
-                            <Style BasedOn="{StaticResource AduListBoxItem}" TargetType="AduSkin:AduListBoxItem">
-                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                <Setter Property="BorderThickness" Value="0" />
-                                <Setter Property="Padding" Value="0" />
-                                <Setter Property="Background" Value="Transparent" />
-                                <Setter Property="AduAttach:BackgroundAttach.MouseOverBackground" Value="Transparent" />
-                                <Setter Property="AduAttach:BackgroundAttach.SelectedBackground" Value="Transparent" />
-                            </Style>
-                        </AduSkin:AduListBox.Resources>
-                        <AduSkin:AduListBox.ItemTemplate>
-                            <DataTemplate>
-                                <AduSkin:AduChatBubble
-                                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                                    MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType={x:Type AduSkin:AduListBox}}}"
-                                    ReceptionType="{Binding ReceptionType}"
-                                    Style="{StaticResource NoAvatarBubble}"
-                                    Text="{Binding Text}" />
-                            </DataTemplate>
-                        </AduSkin:AduListBox.ItemTemplate>
-                    </AduSkin:AduListBox>
+                        HorizontalScrollBarVisibility="Disabled"
+                        ScrollChanged="FollowStreamingReply"
+                        VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="Messages" ItemsSource="{Binding Messages}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <AduSkin:AduChatBubble
+                                        MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}"
+                                        ReceptionType="{Binding ReceptionType}"
+                                        Style="{StaticResource NoAvatarBubble}"
+                                        Text="{Binding Text}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </AduScrollViewer>
                 </Grid>
 
                 <StackPanel Grid.Row="2" Margin="6,0,6,4">
                     <StackPanel Orientation="Horizontal">
-                        <AduSkin:AduButton x:Name="AttachFilesButton" Width="Auto" Padding="10,0"
-                            Content="添加文件" Click="SelectTextFiles" IsEnabled="{Binding IsIdle}"
+                        <AduSkin:AduButton
+                            x:Name="AttachFilesButton"
+                            Width="Auto"
+                            Padding="10,0"
+                            Click="SelectTextFiles"
+                            Content="添加文件"
+                            IsEnabled="{Binding IsIdle}"
                             ToolTip="选择 TXT 或 Markdown 文件；发送时将正文提供给当前模型" />
-                        <AduSkin:AduButton x:Name="AttachDirectoryButton" Width="Auto" Padding="10,0" Margin="8,0,0,0"
-                            Content="添加目录" Click="SelectDirectory" IsEnabled="{Binding IsIdle}"
+                        <AduSkin:AduButton
+                            x:Name="AttachDirectoryButton"
+                            Width="Auto"
+                            Margin="8,0,0,0"
+                            Padding="10,0"
+                            Click="SelectDirectory"
+                            Content="添加目录"
+                            IsEnabled="{Binding IsIdle}"
                             ToolTip="递归读取文本和代码文件，跳过目录链接；最多 128 个文件、单文件 256 KiB、合计 2 MiB" />
                     </StackPanel>
-                    <ScrollViewer MaxHeight="110" Margin="0,4,0,0" VerticalScrollBarVisibility="Auto"
-                        HorizontalScrollBarVisibility="Disabled" Visibility="{Binding HasAttachments, Converter={StaticResource BoolVisibility}}">
+                    <AduScrollViewer
+                        MaxHeight="110"
+                        Margin="4,4,4,0"
+                        HorizontalScrollBarVisibility="Disabled"
+                        VerticalScrollBarVisibility="Auto"
+                        Visibility="{Binding HasAttachments, Converter={StaticResource BoolVisibility}}">
                         <ItemsControl ItemsSource="{Binding Attachments}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -162,18 +182,27 @@
                                             <ColumnDefinition />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding DisplayName}"
-                                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                        <AduSkin:AduButton Grid.Column="1" Width="28" Height="24" Content="×"
-                                            ToolTip="移除此附件" Click="RemoveTextAttachment"
-                                            IsEnabled="{Binding DataContext.IsIdle, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
+                                        <TextBlock
+                                            VerticalAlignment="Center"
+                                            Text="{Binding DisplayName}"
+                                            TextTrimming="CharacterEllipsis"
+                                            ToolTip="{Binding DisplayName}" />
+                                        <AduSkin:AduPathIconButton
+                                            Grid.Column="1"
+                                            Width="28"
+                                            Height="24"
+                                            Click="RemoveTextAttachment"
+                                            IsEnabled="{Binding DataContext.IsIdle, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                            PathDataAttach.PathData="{DynamicResource Icon_SystemClose}"
+                                            PathDataAttach.Width="8"
+                                            ToolTip="移除此附件" />
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                    </ScrollViewer>
+                    </AduScrollViewer>
                 </StackPanel>
-                <Grid Grid.Row="3" Margin="6">
+                <Grid Grid.Row="3" Margin="6,0,6,6">
                     <AduSkin:AduTextBox
                         x:Name="Input"
                         MinHeight="100"

@@ -71,6 +71,24 @@ internal static class Program
             Check(vm.Messages[0].Text.Contains("note.md") && !vm.Messages[0].Text.Contains("文件正文"), "Restoring a session must keep compact attachment display.");
 
             var attachment = await TextAttachment.ReadAsync(note);
+            foreach (var outcome in new[] { "success", "failure", "cancel" })
+            {
+                var pending = new PendingProvider();
+                var pendingVm = new ChatViewModel { Assistant = new AiAssistant(pending) };
+                await pendingVm.AddAttachmentsAsync([note]);
+                var sending = pendingVm.SendAsync();
+                Check(pendingVm.IsBusy && pendingVm.HasAttachments && pendingVm.Attachments.Count == 1,
+                    "Selected files must remain listed while a reply is pending.");
+                Check(!pendingVm.SendCommand.CanExecute(null!), "Pending files must not allow a duplicate send.");
+                if (outcome == "success") pending.Completion.SetResult(new("assistant", "done"));
+                else if (outcome == "failure") pending.Completion.SetException(new IOException("Simulated failure"));
+                else pendingVm.StopCommand.Execute(null!);
+                await sending;
+                Check(pendingVm.IsIdle && !pendingVm.HasAttachments && pendingVm.Attachments.Count == 0,
+                    $"Selected files must be removed after {outcome}.");
+                if (outcome == "success")
+                    Check(pendingVm.Assistant.History[1].Attachments?.Count == 1, "Clearing the list must retain successful file context.");
+            }
             foreach (var claude in new[] { false, true })
             {
                 var handler = new CaptureHandler(claude);
@@ -118,6 +136,13 @@ internal static class Program
             if (Path.GetFullPath(root).StartsWith(Path.GetFullPath(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase))
                 Directory.Delete(root, true);
         }
+    }
+
+    private sealed class PendingProvider : IChatProvider
+    {
+        public TaskCompletionSource<ChatMessage> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task<ChatMessage> CompleteAsync(IReadOnlyList<ChatMessage> messages, IReadOnlyList<ToolDefinition> tools, CancellationToken cancellationToken) =>
+            Completion.Task.WaitAsync(cancellationToken);
     }
 
     private sealed class CaptureProvider : IChatProvider
